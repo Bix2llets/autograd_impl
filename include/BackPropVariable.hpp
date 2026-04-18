@@ -1,3 +1,5 @@
+#include <unordered_map>
+#include <utility>
 #include <vector>
 class ParentNode;
 enum class Operator : int {
@@ -11,27 +13,33 @@ enum class Operator : int {
 class BackPropVariable {
 
 private:
-  double value;
+  double forwardValue;
+  double backwardValue;
+  int id;
 
 private:
   BackPropVariable *parent1; // This can be a nullptr if the variable is
-                             // initialized and not calculated
   BackPropVariable *parent2; // This can be a nullptr if the operator is unary
   Operator parentRelation;
+  std::unordered_map<int, bool> backwardDependencies;
+
+  static int creationCount;
 
 public:
-  BackPropVariable(double value) : value{value} {}
-  inline double getValue() { return value; }
+  BackPropVariable(double value);
+  inline double getValue() { return backwardValue; }
   void trigger_back_propagation();
 
-  BackPropVariable operator+(const BackPropVariable &rhs);
-  BackPropVariable operator-(const BackPropVariable &rhs);
-  BackPropVariable operator*(const BackPropVariable &rhs);
-  BackPropVariable operator/(const BackPropVariable &rhs);
+  BackPropVariable operator+(BackPropVariable &rhs);
+  BackPropVariable operator-(BackPropVariable &rhs);
+  BackPropVariable operator*(BackPropVariable &rhs);
+  BackPropVariable operator/(BackPropVariable &rhs);
+
+  void markComplete();
 
 private:
-  BackPropVariable createBinaryResult(const BackPropVariable *operand1,
-                                      const BackPropVariable *operand2);
+  BackPropVariable createBinaryResult(BackPropVariable *operand1,
+                                      BackPropVariable *operand2);
 
-  BackPropVariable createUnaryResult(const BackPropVariable *operand);
+  BackPropVariable createUnaryResult(BackPropVariable *operand);
 };

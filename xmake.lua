@@ -1,6 +1,9 @@
 add_rules("mode.debug", "mode.release")
 
 target("backprop_impl")
+set_languages("cxx20")
+set_symbols("debug")
+set_strip("debug")
 set_kind("binary")
 add_files("src/*.cpp")
 add_includedirs("include")
