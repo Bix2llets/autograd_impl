@@ -8,6 +8,12 @@ enum class Operator : int {
   Multiply,
   Divide,
   Init, // For the case of initialization
+  Power,
+  LogarithmE, // Natural logarithm
+  LogarithmN, // Other logarithm
+  Sin,
+  Cos,
+
   // Temporarity four operators, will extend it to all binary and unary
 };
 class BackPropVariable {
