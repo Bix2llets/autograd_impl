@@ -1,4 +1,5 @@
 add_rules("mode.debug", "mode.release")
+add_requires("gtest")
 
 target("backprop_impl")
 set_languages("cxx20")
@@ -7,6 +8,18 @@ set_strip("debug")
 set_kind("binary")
 add_files("src/*.cpp")
 add_includedirs("include")
+add_packages("gtest")
+
+target("backprop_test")
+set_languages("cxx20")
+set_symbols("debug")
+set_strip("debug")
+set_kind("binary")
+add_files("src/test/*.cpp")
+add_files("src/BackPropVariable.cpp")
+add_includedirs("include")
+add_packages("gtest")
+add_links("gtest_main", "gtest")
 
 --
 -- If you want to known more usage about xmake, please see https://xmake.io
