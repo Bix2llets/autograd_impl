@@ -1,0 +1,293 @@
+
+#include "BackPropModules/BackPropVariable.hpp"
+#include <cmath>
+#include <format>
+#include <iostream>
+#include <stdexcept>
+
+int BackPropVariable::creationCount = 0;
+BackPropVariable::BackPropVariable(double value)
+    : forwardValue{value}, backwardValue(0), parent1{nullptr},
+      parent2{nullptr} {
+  creationCount++;
+  id = creationCount;
+};
+void BackPropVariable::trigger_back_propagation() {
+  // TODO: Revamp this to optimize the checking for dependencies
+  for (auto [dependency, isDone] : backwardDependencies) {
+    if (!isDone)
+      return;
+  }
+  if (backwardDependencies.size() == 0) {
+    this->backwardValue = 1;
+  }
+  // Calculation goes here
+  switch (parentRelation) {
+  case Operator::Init:
+    break;
+  case Operator::Add:
+    if (parent1)
+      parent1->backwardValue += this->backwardValue;
+    if (parent2)
+      parent2->backwardValue += this->backwardValue;
+    break;
+  case Operator::Subtract:
+    if (parent1)
+      parent1->backwardValue += this->backwardValue;
+    if (parent2)
+      parent2->backwardValue -= this->backwardValue;
+    break;
+  case Operator::Multiply: {
+    double fwd1 = parent1 ? parent1->forwardValue : constantValue;
+    double fwd2 = parent2 ? parent2->forwardValue : constantValue;
+    if (parent1)
+      parent1->backwardValue += this->backwardValue * fwd2;
+    if (parent2)
+      parent2->backwardValue += this->backwardValue * fwd1;
+    break;
+  }
+  case Operator::Divide: {
+    double fwd2 = parent2 ? parent2->forwardValue : constantValue;
+    double fwd1 = parent1 ? parent1->forwardValue : constantValue;
+    if (parent1)
+      parent1->backwardValue += this->backwardValue * 1.0 / fwd2;
+    if (parent2)
+      parent2->backwardValue -=
+          this->backwardValue * fwd1 / (fwd2 * fwd2);
+    break;
+  }
+  case Operator::Sin:
+    parent1->backwardValue +=
+        this->backwardValue * std::cos(parent1->forwardValue);
+    break;
+  case Operator::Cos:
+    parent1->backwardValue +=
+        this->backwardValue * -std::sin(parent1->forwardValue);
+    break;
+  case Operator::Tan:
+    parent1->backwardValue +=
+        this->backwardValue *
+        (1 + tan(parent1->forwardValue) * std::tan(parent1->forwardValue));
+    break;
+  case Operator::LogarithmE:
+    parent1->backwardValue += this->backwardValue * 1.0 / parent1->forwardValue;
+    break;
+  case Operator::LogarithmN:
+    // Log_parent1->forwardValue(parent2->forwardValue)
+    parent1->backwardValue +=
+        this->backwardValue * log(parent2->forwardValue) /
+        (log(parent1->forwardValue) * log(parent1->forwardValue));
+    parent2->backwardValue +=
+        this->backwardValue +
+        1 / (parent2->forwardValue * log(parent1->forwardValue));
+    break;
+  case Operator::Power:
+
+    parent1->backwardValue +=
+        this->backwardValue *
+        (parent2->forwardValue *
+         pow(parent1->forwardValue, parent2->forwardValue - 1));
+    parent2->backwardValue += this->backwardValue * parent2->forwardValue *
+                              log(parent1->forwardValue);
+    break;
+  default:
+    break;
+  }
+
+  if (parent1) {
+    parent1->notifyCompletion(this->id);
+    parent1->trigger_back_propagation();
+  }
+  if (parent2) {
+    parent2->notifyCompletion(this->id);
+    parent2->trigger_back_propagation();
+  }
+}
+
+void BackPropVariable::setBackPropValue(double value) {
+  this->backwardValue = value;
+  if (parent1 && parent1->backwardValue)
+    parent1->setBackPropValue(0.0);
+  if (parent2 && parent2->backwardValue)
+    parent2->setBackPropValue(0.0);
+}
+BackPropVariable
+BackPropVariable::createBinaryResult(BackPropVariable *operand1,
+                                     BackPropVariable *operand2) {
+  BackPropVariable result(0);
+  if (operand1)
+    operand1->backwardDependencies.insert({result.id, false});
+  if (operand2)
+    operand2->backwardDependencies.insert({result.id, false});
+  result.parent1 = operand1;
+  result.parent2 = operand2;
+  return std::move(result);
+}
+
+BackPropVariable
+BackPropVariable::createUnaryResult(BackPropVariable *operand) {
+  BackPropVariable result(0);
+  operand->backwardDependencies.insert({result.id, false});
+  result.parent1 = operand;
+  result.parent2 = nullptr;
+  return std::move(result);
+}
+
+BackPropVariable BackPropVariable::operator+(BackPropVariable &rhs) {
+  BackPropVariable result = createBinaryResult(this, &rhs);
+  result.forwardValue = this->forwardValue + rhs.forwardValue;
+  result.parentRelation = Operator::Add;
+
+  return std::move(result);
+}
+BackPropVariable BackPropVariable::operator-(BackPropVariable &rhs) {
+  BackPropVariable result = createBinaryResult(this, &rhs);
+  result.forwardValue = this->forwardValue - rhs.forwardValue;
+  result.parentRelation = Operator::Subtract;
+  return std::move(result);
+}
+BackPropVariable BackPropVariable::operator*(BackPropVariable &rhs) {
+  BackPropVariable result = createBinaryResult(this, &rhs);
+  result.forwardValue = this->forwardValue * rhs.forwardValue;
+  result.parentRelation = Operator::Multiply;
+  return std::move(result);
+}
+BackPropVariable BackPropVariable::operator/(BackPropVariable &rhs) {
+  if (rhs.forwardValue == 0.0)
+    throw std::logic_error("Division by zero for a value");
+  BackPropVariable result = createBinaryResult(this, &rhs);
+  result.forwardValue = this->forwardValue / rhs.forwardValue;
+  result.parentRelation = Operator::Divide;
+  return std::move(result);
+}
+
+BackPropVariable BackPropVariable::operator+(const BackPropVariable &rhs) {
+  return operator+(const_cast<BackPropVariable &>(rhs));
+}
+BackPropVariable BackPropVariable::operator-(const BackPropVariable &rhs) {
+  return operator-(const_cast<BackPropVariable &>(rhs));
+}
+BackPropVariable BackPropVariable::operator*(const BackPropVariable &rhs) {
+  return operator*(const_cast<BackPropVariable &>(rhs));
+}
+BackPropVariable BackPropVariable::operator/(const BackPropVariable &rhs) {
+  return operator/(const_cast<BackPropVariable &>(rhs));
+}
+
+BackPropVariable BackPropVariable::operator+(double rhs) {
+  BackPropVariable result = createBinaryResult(this, nullptr);
+  result.constantValue = rhs;
+  result.forwardValue = this->forwardValue + rhs;
+  result.parentRelation = Operator::Add;
+  return result;
+}
+BackPropVariable BackPropVariable::operator-(double rhs) {
+  BackPropVariable result = createBinaryResult(this, nullptr);
+  result.constantValue = rhs;
+  result.forwardValue = this->forwardValue - rhs;
+  result.parentRelation = Operator::Subtract;
+  return result;
+}
+BackPropVariable BackPropVariable::operator*(double rhs) {
+  BackPropVariable result = createBinaryResult(this, nullptr);
+  result.constantValue = rhs;
+  result.forwardValue = this->forwardValue * rhs;
+  result.parentRelation = Operator::Multiply;
+  return result;
+}
+BackPropVariable BackPropVariable::operator/(double rhs) {
+  if (rhs == 0.0)
+    throw std::logic_error("Division by zero for a value");
+  BackPropVariable result = createBinaryResult(this, nullptr);
+  result.constantValue = rhs;
+  result.forwardValue = this->forwardValue / rhs;
+  result.parentRelation = Operator::Divide;
+  return result;
+}
+
+BackPropVariable operator+(double lhs, const BackPropVariable &rhs) {
+  auto &nr = const_cast<BackPropVariable &>(rhs);
+  BackPropVariable result = BackPropVariable::createBinaryResult(nullptr, &nr);
+  result.constantValue = lhs;
+  result.forwardValue = lhs + nr.forwardValue;
+  result.parentRelation = Operator::Add;
+  return result;
+}
+BackPropVariable operator-(double lhs, const BackPropVariable &rhs) {
+  auto &nr = const_cast<BackPropVariable &>(rhs);
+  BackPropVariable result = BackPropVariable::createBinaryResult(nullptr, &nr);
+  result.constantValue = lhs;
+  result.forwardValue = lhs - nr.forwardValue;
+  result.parentRelation = Operator::Subtract;
+  return result;
+}
+BackPropVariable operator*(double lhs, const BackPropVariable &rhs) {
+  auto &nr = const_cast<BackPropVariable &>(rhs);
+  BackPropVariable result = BackPropVariable::createBinaryResult(nullptr, &nr);
+  result.constantValue = lhs;
+  result.forwardValue = lhs * nr.forwardValue;
+  result.parentRelation = Operator::Multiply;
+  return result;
+}
+BackPropVariable operator/(double lhs, const BackPropVariable &rhs) {
+  auto &nr = const_cast<BackPropVariable &>(rhs);
+  if (nr.forwardValue == 0.0)
+    throw std::logic_error("Division by zero for a value");
+  BackPropVariable result = BackPropVariable::createBinaryResult(nullptr, &nr);
+  result.constantValue = lhs;
+  result.forwardValue = lhs / nr.forwardValue;
+  result.parentRelation = Operator::Divide;
+  return result;
+}
+
+void BackPropVariable::notifyCompletion(int id) {
+  auto foundPair = this->backwardDependencies.find(id);
+  if (foundPair == backwardDependencies.end()) {
+    std::cerr << "WARNING: id not found";
+    return;
+  }
+  if (foundPair->second == true) {
+    std::cerr << "WARNING: already completed";
+    return;
+  }
+  backwardDependencies[id] = true;
+}
+
+BackPropVariable sin(BackPropVariable &x) {
+  BackPropVariable result = BackPropVariable::createUnaryResult(&x);
+  result.forwardValue = std::sin(x.forwardValue);
+  result.parentRelation = Operator::Sin;
+
+  return result;
+}
+
+BackPropVariable cos(BackPropVariable &x) {
+
+  BackPropVariable result = BackPropVariable::createUnaryResult(&x);
+  result.forwardValue = std::sin(x.forwardValue);
+  result.parentRelation = Operator::Cos;
+
+  return result;
+}
+
+BackPropVariable pow(BackPropVariable &base, BackPropVariable &power) {
+  BackPropVariable result = BackPropVariable::createBinaryResult(&base, &power);
+  result.forwardValue = std::pow(base.forwardValue, power.forwardValue);
+  result.parentRelation = Operator::Power;
+
+  return result;
+}
+BackPropVariable log(BackPropVariable &base, BackPropVariable &x) {
+  BackPropVariable result = BackPropVariable::createBinaryResult(&base, &x);
+  result.forwardValue = 1.0 / log(base.forwardValue) * log(x.forwardValue);
+  result.parentRelation = Operator::LogarithmN;
+
+  return result;
+}
+BackPropVariable log(BackPropVariable &x) {
+  BackPropVariable result = BackPropVariable::createUnaryResult(&x);
+  result.forwardValue = log(x.forwardValue);
+  result.parentRelation = Operator::LogarithmE;
+
+  return result;
+}
